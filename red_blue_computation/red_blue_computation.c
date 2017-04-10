@@ -3,16 +3,20 @@
 #include <stdio.h>
 #include <time.h>
 
+int allocate_memory(int n, int **grid_flat, int ***grid);
+int init_grid(int n, int ***grid);
+int print_grid(int n, int ***grid);
+
+
 int main(int argc, char **argv) {
-	int **grid;	// two-dimension grid
 	int *grid_flat;	// one-dimension version of grid
+	int **grid;	// two-dimension grid
 	int n, t, c, max_iters;	// n-cell grid size, t-tile grid size, c-terminating threshold, max_iters- maximum number of iterations
 	int n_itrs = 0;	// the iteration times
 	int redcount = 0, bluecount = 0; // the count of red and blue
 	int myid;
 	int numprocs;
 	MPI_Status status;
-	time_t s;
 	int i, j;
 
 	MPI_Init(&argc, &argv);
@@ -46,7 +50,50 @@ int main(int argc, char **argv) {
 		}
 	}
 
+	if (myid == 0) {
+		allocate_memory(n, &grid_flat, &grid);
+		init_grid(n, &grid);
+		print_grid(n, &grid);
+	}
+
 	MPI_Finalize();
 	return 0;
 }
 
+// memory allocation for grid
+int allocate_memory(int n, int **grid_flat, int ***grid) {
+	int count = n * n;
+	*grid_flat = (int *)malloc(sizeof(int) * count);
+	*grid = (int **)malloc(sizeof(int *) * n);
+	int i;
+
+	for (i = 0; i < n; i++) {
+		(*grid)[i] = &((*grid_flat)[i * n]);
+	}	
+}
+
+// initialize grid
+int init_grid(int n, int ***grid) {
+	time_t s;
+	srand((unsigned)time(&s));
+	int i, j;
+
+	for (i = 0; i < n; i++) {
+		for (j = 0; j < n; j++) {
+			(*grid)[i][j] = rand() % 3;
+		}
+	}
+}
+
+// print grid
+int print_grid(int n, int ***grid) {
+	int i, j;
+
+	for (i = 0; i < n; i++) {
+		for (j = 0; j < n; j++) {
+			printf("%d", (*grid)[i][j]);
+		}
+		printf("\n");
+	}
+	printf("\n");
+}
