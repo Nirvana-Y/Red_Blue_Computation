@@ -8,6 +8,8 @@ void allocate_memory(int l, int w, int **grid_flat, int ***grid);
 void init_grid(int n, int ***grid);
 void print_grid(int n, int ***grid);
 int* distribute_row_for_processes(int numprocs, int n, int t);
+void do_red(int l, int w, int ***grid);
+void do_blue(int l, int w, int ***grid);
 
 
 int main(int argc, char **argv) {
@@ -83,7 +85,7 @@ int main(int argc, char **argv) {
 				
 				MPI_Recv(&grid_flat[index * n], row[i - 1] * n, MPI_INT, i, 1, MPI_COMM_WORLD, &status);
 			}
-			//print_grid(n, &grid);
+			print_grid(n, &grid);
 		}
 	}
 	else {
@@ -94,14 +96,8 @@ int main(int argc, char **argv) {
 		MPI_Sendrecv(&grid_flat[(row[myid - 1] - 1) * n + n], n, MPI_INT, myid % (numprocs - 1) + 1, 1, &grid_flat[0], n, MPI_INT, (myid - 2 + (numprocs - 1)) % (numprocs - 1) + 1, 1, MPI_COMM_WORLD, &status);
 		MPI_Sendrecv(&grid_flat[n], n, MPI_INT, (myid - 2 + (numprocs - 1)) % (numprocs - 1) + 1, 2, &grid_flat[row[myid - 1] * n + n], n, MPI_INT, myid % (numprocs - 1) + 1, 2, MPI_COMM_WORLD, &status);
 		
-		printf("\n");
-		for (i = 0; i < row[myid - 1] + 2; i++) {
-			for (j = 0; j < n;j++) {
-				printf("%d", grid[i][j]);
-			}
-			printf("\n");
-		}
-
+		do_red(n, row[myid - 1] + 2, &grid);
+		do_blue(n, row[myid - 1] + 2, &grid);
 		MPI_Send(&grid_flat[n], row[myid - 1] * n, MPI_INT, 0, 1, MPI_COMM_WORLD);
 	}
 
@@ -169,4 +165,53 @@ int* distribute_row_for_processes(int numprocs, int n, int t) {
 	}
 
 	return row;
+}
+
+// red color movement
+void do_red(int l, int w, int ***grid) {
+	int i, j;
+	for (i = 0; i < w; i++) {
+		//the first column.
+		if ((*grid)[i][0] == 1 && (*grid)[i][1] == 0) {
+			(*grid)[i][0] = 4;
+			(*grid)[i][1] = 3;
+		}
+		//the rest column.
+		for (j = 1; j < l; j++) {
+			if ((*grid)[i][j] == 1 && ((*grid)[i][(j + 1) % l] == 0)) {
+				(*grid)[i][j] = 0;
+				(*grid)[i][(j + 1) % l] = 3;
+			}
+			else if ((*grid)[i][j] == 3)
+				(*grid)[i][j] = 1;
+		}
+		//cast back to the changed colours.
+		if ((*grid)[i][0] == 3)
+			(*grid)[i][0] = 1;
+		else if ((*grid)[i][0] == 4)
+			(*grid)[i][0] = 0;
+	}
+}
+
+// blue color movement
+void do_blue(int l, int w, int ***grid) {
+	int i, j;
+	for (j = 0; j < l; j++) {
+		if ((*grid)[0][j] == 2 && (*grid)[1][j] == 0) {
+			(*grid)[0][j] = 4;
+			(*grid)[1][j] = 3;
+		}
+		for (i = 1; i < w; i++) {
+			if ((*grid)[i][j] == 2 && (*grid)[(i + 1) % w][j] == 0) {
+				(*grid)[i][j] = 0;
+				(*grid)[(i + 1) % w][j] = 3;
+			}
+			else if ((*grid)[i][j] == 3)
+				(*grid)[i][j] = 2;
+		}
+		if ((*grid)[0][j] == 3)
+			(*grid)[0][j] = 2;
+		else if ((*grid)[0][j] == 4)
+			(*grid)[0][j] = 0;
+	}
 }
