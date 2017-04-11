@@ -83,20 +83,26 @@ int main(int argc, char **argv) {
 				
 				MPI_Recv(&grid_flat[index * n], row[i - 1] * n, MPI_INT, i, 1, MPI_COMM_WORLD, &status);
 			}
-			print_grid(n, &grid);
+			//print_grid(n, &grid);
 		}
 	}
 	else {
-		allocate_memory(n, row[myid - 1], &grid_flat, &grid);
-		MPI_Recv(&grid_flat[0], row[myid - 1] * n, MPI_INT, 0, 1, MPI_COMM_WORLD, &status);
+		allocate_memory(n, row[myid - 1] + 2, &grid_flat, &grid);
+		MPI_Recv(&grid_flat[n], row[myid - 1] * n, MPI_INT, 0, 1, MPI_COMM_WORLD, &status);
 		
-		for (i = 0; i < row[myid - 1]; i++) {
+		// create ghost line for the easier manipulation of the grid
+		MPI_Sendrecv(&grid_flat[(row[myid - 1] - 1) * n + n], n, MPI_INT, myid % (numprocs - 1) + 1, 1, &grid_flat[0], n, MPI_INT, (myid - 2 + (numprocs - 1)) % (numprocs - 1) + 1, 1, MPI_COMM_WORLD, &status);
+		MPI_Sendrecv(&grid_flat[n], n, MPI_INT, (myid - 2 + (numprocs - 1)) % (numprocs - 1) + 1, 2, &grid_flat[row[myid - 1] * n + n], n, MPI_INT, myid % (numprocs - 1) + 1, 2, MPI_COMM_WORLD, &status);
+		
+		printf("\n");
+		for (i = 0; i < row[myid - 1] + 2; i++) {
 			for (j = 0; j < n;j++) {
-				grid[i][j] = myid;
+				printf("%d", grid[i][j]);
 			}
+			printf("\n");
 		}
 
-		MPI_Send(&grid_flat[0], row[myid - 1] * n, MPI_INT, 0, 1, MPI_COMM_WORLD);
+		MPI_Send(&grid_flat[n], row[myid - 1] * n, MPI_INT, 0, 1, MPI_COMM_WORLD);
 	}
 
 	MPI_Finalize();
