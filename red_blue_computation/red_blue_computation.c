@@ -6,6 +6,8 @@
 #define RED 1
 #define BLUE 2
 #define BOTH 3
+#define PARALLEL 1
+#define SEQUENTIAL 2
 
 // declera the functions
 void allocate_memory(int l, int w, int **grid_flat, int ***grid);
@@ -14,12 +16,17 @@ void print_grid(int n, int ***grid);
 int* distribute_row_for_processes(int numprocs, int n, int t);
 void do_red(int l, int w, int ***grid);
 void do_blue(int l, int w, int ***grid);
-int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, int n, int t, float threshold);
+int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, int n, int t, float threshold, int type);
+void print_computation_result(float **red_blue_array, int tile_number);
+void sequential_computation(int **grid_flat, int ***grid, int tile_number, int n, int t, float threshold, int max_iters);
+
 
 
 int main(int argc, char **argv) {
 	int *grid_flat;	// one-dimension version of grid
 	int **grid;	// two-dimension grid
+	int *grid_flat_copy; // the copy of one-dimension version of grid
+	int **grid_copy; // the copy of the initial two-dimension grid
 	int n, t, c, max_iters;	// n-cell grid size, t-tile grid size, c-terminating threshold, max_iters- maximum number of iterations
 	int n_itrs = 0;	// the iteration times
 	int finished_flag = 0; // the flag show whether the iteration finished or not
@@ -27,6 +34,7 @@ int main(int argc, char **argv) {
 	float threshold; // the threshold shown in percentage
 	int tile_number; // the number of tile in the grid
 	int redcount = 0, bluecount = 0; // the count of red and blue
+	int type; // the algorithm type, parallel or sequential
 	int myid;
 	int numprocs;
 	MPI_Status status;
@@ -64,20 +72,27 @@ int main(int argc, char **argv) {
 		}
 	}
 
-	int *row = distribute_row_for_processes(numprocs, n, t);
+	int *row;
+	if (numprocs != 1) {
+		row = distribute_row_for_processes(numprocs, n, t);
+	}
 
 	if (myid == 0) {
 		tile_number = (n * n) / (t * t);
-		int exceed_tile = 0;
 		float *red_blue_array = (float *)malloc(sizeof(float) * tile_number * 3);	// store the red and blue ratio in grid
 
 		allocate_memory(n, n, &grid_flat, &grid);
+		allocate_memory(n, n, &grid_flat_copy, &grid_copy);
+
 		init_grid(n, &grid);
+		memcpy(grid_flat_copy, grid_flat, sizeof(int) * n * n);
+
 		printf("The initial grid: \n");
-		print_grid(n, &grid);
+		print_grid(n, &grid);	
 	
 		if (numprocs == 1) {
-			return 0;
+			sequential_computation(&grid_flat, &grid, tile_number, n, t, threshold, max_iters);
+			goto EXIT;
 		}
 		else {	
 			// send the sub-grid to corresponding processes
@@ -110,33 +125,17 @@ int main(int argc, char **argv) {
 				MPI_Recv(&grid_flat[index * n], row[i - 1] * n, MPI_INT, i, 1, MPI_COMM_WORLD, &status);
 			}
 			
+			printf("The parallel computation result: \n");
 			printf("After %d interations, the final grid: \n", n_itrs);
 			print_grid(n, &grid);
+			print_computation_result(&red_blue_array, tile_number);
 
-			for (i = 0; i < tile_number; i++) {
-				if (red_blue_array[3 * i] == RED) {
-					printf("In tile %d, the red color exceed the threshold with the ratio %.2f.\n", i, red_blue_array[3 * i + 1]);
-					exceed_tile = exceed_tile + 1;
-				}
-
-				if (red_blue_array[3 * i] == BLUE) {
-					printf("In tile %d, the red color exceed the threshold with the ratio %.2f.\n", i, red_blue_array[3 * i + 2]);
-					exceed_tile = exceed_tile + 1;
-				}
-
-				if (red_blue_array[3 * i] == BOTH) {
-					printf("In tile %d, the red color exceed the threshold with the ratio %.2f and the red color exceed the threshold with the ratio %.2f.\n" , i, red_blue_array[3 * i + 1], red_blue_array[3 * i + 2]);
-					exceed_tile = exceed_tile + 1;
-				}
-			}
-
-			if (exceed_tile == 0) {
-				printf("There is no tile containning color exceeding threshold.\n The computation terminated becausu the maximum iteration number has been reached.");
-			}
+			sequential_computation(&grid_flat_copy, &grid_copy, tile_number, n, t, threshold, max_iters);
 		}
 	}
 	else {
 		tile_number = (n * row[myid - 1]) / (t * t);
+		type = PARALLEL;
 		float *red_blue_array = (float *)malloc(sizeof(float) * tile_number * 3);	// store the red and blue ratio in each tile grid
 
 		allocate_memory(n, row[myid - 1] + 2, &grid_flat, &grid);
@@ -156,13 +155,14 @@ int main(int argc, char **argv) {
 			do_red(n, row[myid - 1] + 2, &grid);
 			do_blue(n, row[myid - 1] + 2, &grid);
 
-			finished_flag_p = red_blue_computation(&red_blue_array, &grid, tile_number, n, t, threshold);
+			finished_flag_p = red_blue_computation(&red_blue_array, &grid, tile_number, n, t, threshold, type);
 			MPI_Allreduce(&finished_flag_p, &finished_flag, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 		}
 		MPI_Send(&red_blue_array[0], tile_number * 3, MPI_FLOAT, 0, 1, MPI_COMM_WORLD);
 		MPI_Send(&grid_flat[n], row[myid - 1] * n, MPI_INT, 0, 1, MPI_COMM_WORLD);
 	}
 
+EXIT:
 	MPI_Finalize();
 	return 0;
 }
@@ -278,7 +278,8 @@ void do_blue(int l, int w, int ***grid) {
 	}
 }
 
-int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, int n, int t, float threshold) {
+// check whether there is any tile exceeding the threshold
+int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, int n, int t, float threshold, int type) {
 	float tile_count = t * t;	// the number of cells in each tile
 	int tile_row, tile_column; // the index of tile in tile grid
 	int redcount = 0, bluecount = 0;
@@ -291,11 +292,21 @@ int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, i
 		tile_column = i % (n / t);
 		for (j = t * tile_row; j < t * tile_row + t; j++) {
 			for (k = t * tile_column; k < t * tile_column + t; k++) {
-				if ((*grid)[j + 1][k] == 1) {
-					redcount = redcount + 1;
+				if (type == PARALLEL) {
+					if ((*grid)[j + 1][k] == 1) {
+						redcount = redcount + 1;
+					}
+					if ((*grid)[j + 1][k] == 2) {
+						bluecount = bluecount + 1;
+					}
 				}
-				if ((*grid)[j + 1][k] == 2) {
-					bluecount = bluecount + 1;
+				else {
+					if ((*grid)[j][k] == 1) {
+						redcount = redcount + 1;
+					}
+					if ((*grid)[j][k] == 2) {
+						bluecount = bluecount + 1;
+					}
 				}
 			}
 		}
@@ -326,4 +337,53 @@ int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, i
 		bluecount = 0;
 	}
 	return finished_flag;
+}
+
+void print_computation_result(float **red_blue_array, int tile_number) {
+	int exceed_tile = 0;
+	int i;
+
+	for (i = 0; i < tile_number; i++) {
+		if ((*red_blue_array)[3 * i] == RED) {
+			printf("In tile %d, the red color exceed the threshold with the ratio %.2f.\n", i, (*red_blue_array)[3 * i + 1]);
+			exceed_tile = exceed_tile + 1;
+		}
+
+		if ((*red_blue_array)[3 * i] == BLUE) {
+			printf("In tile %d, the blue color exceed the threshold with the ratio %.2f.\n", i, (*red_blue_array)[3 * i + 2]);
+			exceed_tile = exceed_tile + 1;
+		}
+
+		if ((*red_blue_array)[3 * i] == BOTH) {
+			printf("In tile %d, the red color exceed the threshold with the ratio %.2f and the blue color exceed the threshold with the ratio %.2f.\n", i, (*red_blue_array)[3 * i + 1], (*red_blue_array)[3 * i + 2]);
+			exceed_tile = exceed_tile + 1;
+		}
+	}
+
+	if (exceed_tile == 0) {
+		printf("There is no tile containning color exceeding threshold.\n");
+		printf("The computation terminated becausu the maximum iteration number has been reached.\n");
+	}
+	printf("\n");
+}
+
+void sequential_computation(int **grid_flat, int ***grid, int tile_number, int n, int t, float threshold, int max_iters) {
+	int finished_flag = 0;
+	int n_itrs = 0;
+	int type = SEQUENTIAL;
+	float *red_blue_array = (float *)malloc(sizeof(float) * tile_number * 3);	// store the red and blue ratio in grid
+
+	while (!finished_flag && n_itrs < max_iters) {
+		n_itrs = n_itrs + 1; // renew the iteration number
+
+		do_red(n, n, grid);
+		do_blue(n, n, grid);
+
+		finished_flag = red_blue_computation(&red_blue_array, grid, tile_number, n, t, threshold, type);
+	}
+
+	printf("The sequential computation result: \n");
+	printf("After %d interations, the final grid: \n", n_itrs);
+	print_grid(n, grid);
+	print_computation_result(&red_blue_array, tile_number);
 }
