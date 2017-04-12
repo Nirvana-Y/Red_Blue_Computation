@@ -20,8 +20,6 @@ int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, i
 void print_computation_result(float **red_blue_array, int tile_number);
 void sequential_computation(int **grid_flat, int ***grid, int tile_number, int n, int t, float threshold, int max_iters);
 
-
-
 int main(int argc, char **argv) {
 	int *grid_flat;	// one-dimension version of grid
 	int **grid;	// two-dimension grid
@@ -88,13 +86,13 @@ int main(int argc, char **argv) {
 		memcpy(grid_flat_copy, grid_flat, sizeof(int) * n * n);
 
 		printf("The initial grid: \n");
-		print_grid(n, &grid);	
-	
+		print_grid(n, &grid);
+
 		if (numprocs == 1) {
 			sequential_computation(&grid_flat, &grid, tile_number, n, t, threshold, max_iters);
 			goto EXIT;
 		}
-		else {	
+		else {
 			// send the sub-grid to corresponding processes
 			for (i = 1; i < numprocs; i++) {
 				int index = 0;
@@ -105,7 +103,7 @@ int main(int argc, char **argv) {
 
 				MPI_Send(&grid_flat[index * n], row[i - 1] * n, MPI_INT, i, 1, MPI_COMM_WORLD);
 			}
-			
+
 			// terminate when the computation in other processes terminate
 			while (!finished_flag && n_itrs < max_iters) {
 				// receive the iteration number from process 1
@@ -124,7 +122,7 @@ int main(int argc, char **argv) {
 				MPI_Recv(&red_blue_array[index * n / (t * t) * 3], (n * row[i - 1]) / (t * t) * 3, MPI_FLOAT, i, 1, MPI_COMM_WORLD, &status);
 				MPI_Recv(&grid_flat[index * n], row[i - 1] * n, MPI_INT, i, 1, MPI_COMM_WORLD, &status);
 			}
-			
+
 			printf("The parallel computation result: \n");
 			printf("After %d interations, the final grid: \n", n_itrs);
 			print_grid(n, &grid);
@@ -176,7 +174,7 @@ void allocate_memory(int l, int w, int **grid_flat, int ***grid) {
 
 	for (i = 0; i < w; i++) {
 		(*grid)[i] = &((*grid_flat)[i * l]);
-	}	
+	}
 }
 
 // initialize grid
@@ -319,7 +317,7 @@ int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, i
 		(*red_blue_array)[3 * i + 2] = blue_ratio;
 
 		if (red_ratio > threshold) {
-			(*red_blue_array)[3 * i] = RED;	
+			(*red_blue_array)[3 * i] = RED;
 			finished_flag = 1;
 		}
 
@@ -331,9 +329,9 @@ int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, i
 		if (blue_ratio > threshold && red_ratio > threshold) {
 			(*red_blue_array)[3 * i] = BOTH;
 			finished_flag = 1;
-		}		
+		}
 
-		redcount = 0; 
+		redcount = 0;
 		bluecount = 0;
 	}
 	return finished_flag;
