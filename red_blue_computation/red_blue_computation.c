@@ -3,9 +3,9 @@
 #include <stdio.h>
 #include <time.h>
 
-#define RED 1;
-#define BLUE 2;
-#define BOTH 3;
+#define RED 1
+#define BLUE 2
+#define BOTH 3
 
 // declera the functions
 void allocate_memory(int l, int w, int **grid_flat, int ***grid);
@@ -68,16 +68,19 @@ int main(int argc, char **argv) {
 
 	if (myid == 0) {
 		tile_number = (n * n) / (t * t);
+		int exceed_tile = 0;
 		float *red_blue_array = (float *)malloc(sizeof(float) * tile_number * 3);	// store the red and blue ratio in grid
 
 		allocate_memory(n, n, &grid_flat, &grid);
 		init_grid(n, &grid);
+		printf("The initial grid: \n");
 		print_grid(n, &grid);
 	
 		if (numprocs == 1) {
 			return 0;
 		}
 		else {	
+			// send the sub-grid to corresponding processes
 			for (i = 1; i < numprocs; i++) {
 				int index = 0;
 				for (j = 0; j < i; j++) {
@@ -88,12 +91,14 @@ int main(int argc, char **argv) {
 				MPI_Send(&grid_flat[index * n], row[i - 1] * n, MPI_INT, i, 1, MPI_COMM_WORLD);
 			}
 			
+			// terminate when the computation in other processes terminate
 			while (!finished_flag && n_itrs < max_iters) {
 				// receive the iteration number from process 1
 				MPI_Recv(&n_itrs, 1, MPI_INT, 1, 1, MPI_COMM_WORLD, &status);
 				MPI_Allreduce(&finished_flag_p, &finished_flag, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
 			}
 
+			// receive the final grid and the computation result from other processes
 			for (i = 1; i < numprocs; i++) {
 				int index = 0;
 				for (j = 0; j < i; j++) {
@@ -104,10 +109,29 @@ int main(int argc, char **argv) {
 				MPI_Recv(&red_blue_array[index * n / (t * t) * 3], (n * row[i - 1]) / (t * t) * 3, MPI_FLOAT, i, 1, MPI_COMM_WORLD, &status);
 				MPI_Recv(&grid_flat[index * n], row[i - 1] * n, MPI_INT, i, 1, MPI_COMM_WORLD, &status);
 			}
-
+			
+			printf("After %d interations, the final grid: \n", n_itrs);
 			print_grid(n, &grid);
-			for (i = 0; i < tile_number * 3; i++) {
-				printf("%.2f ", red_blue_array[i]);
+
+			for (i = 0; i < tile_number; i++) {
+				if (red_blue_array[3 * i] == RED) {
+					printf("In tile %d, the red color exceed the threshold with the ratio %.2f.\n", i, red_blue_array[3 * i + 1]);
+					exceed_tile = exceed_tile + 1;
+				}
+
+				if (red_blue_array[3 * i] == BLUE) {
+					printf("In tile %d, the red color exceed the threshold with the ratio %.2f.\n", i, red_blue_array[3 * i + 2]);
+					exceed_tile = exceed_tile + 1;
+				}
+
+				if (red_blue_array[3 * i] == BOTH) {
+					printf("In tile %d, the red color exceed the threshold with the ratio %.2f and the red color exceed the threshold with the ratio %.2f.\n" , i, red_blue_array[3 * i + 1], red_blue_array[3 * i + 2]);
+					exceed_tile = exceed_tile + 1;
+				}
+			}
+
+			if (exceed_tile == 0) {
+				printf("There is no tile containning color exceeding threshold.\n The computation terminated becausu the maximum iteration number has been reached.");
 			}
 		}
 	}
@@ -134,16 +158,7 @@ int main(int argc, char **argv) {
 
 			finished_flag_p = red_blue_computation(&red_blue_array, &grid, tile_number, n, t, threshold);
 			MPI_Allreduce(&finished_flag_p, &finished_flag, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
-			
-
 		}
-		/*int k;
-		for (j = 0; j < tile_number; j++) {
-			for (k = 0; k < 3; k++) {
-				printf("%.2f ", red_blue_array[3 * j + k]);
-			}
-		}*/
-		printf("\n");
 		MPI_Send(&red_blue_array[0], tile_number * 3, MPI_FLOAT, 0, 1, MPI_COMM_WORLD);
 		MPI_Send(&grid_flat[n], row[myid - 1] * n, MPI_INT, 0, 1, MPI_COMM_WORLD);
 	}
@@ -306,14 +321,6 @@ int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, i
 			(*red_blue_array)[3 * i] = BOTH;
 			finished_flag = 1;
 		}		
-
-		/*printf("%f %f", red_ratio, blue_ratio);*/
-	
-
-		/*for (k = 0; k < 3; k++) {
-			printf("%.2f ", (*red_blue_array)[3*i + k]);
-		}
-		printf("\n");*/
 
 		redcount = 0; 
 		bluecount = 0;
