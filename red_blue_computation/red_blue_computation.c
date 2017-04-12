@@ -3,6 +3,10 @@
 #include <stdio.h>
 #include <time.h>
 
+#define RED 1;
+#define BLUE 2;
+#define BOTH 3;
+
 // declera the functions
 void allocate_memory(int l, int w, int **grid_flat, int ***grid);
 void init_grid(int n, int ***grid);
@@ -10,6 +14,7 @@ void print_grid(int n, int ***grid);
 int* distribute_row_for_processes(int numprocs, int n, int t);
 void do_red(int l, int w, int ***grid);
 void do_blue(int l, int w, int ***grid);
+int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, int n, int t, float threshold);
 
 
 int main(int argc, char **argv) {
@@ -17,7 +22,10 @@ int main(int argc, char **argv) {
 	int **grid;	// two-dimension grid
 	int n, t, c, max_iters;	// n-cell grid size, t-tile grid size, c-terminating threshold, max_iters- maximum number of iterations
 	int n_itrs = 0;	// the iteration times
+	int finished_flag = 0; // the flag show whether the iteration finished or not
+	int finished_flag_p = 0; //	the finished flag for processes
 	float threshold; // the threshold shown in percentage
+	int tile_number; // the number of tile in the grid
 	int redcount = 0, bluecount = 0; // the count of red and blue
 	int myid;
 	int numprocs;
@@ -59,6 +67,9 @@ int main(int argc, char **argv) {
 	int *row = distribute_row_for_processes(numprocs, n, t);
 
 	if (myid == 0) {
+		tile_number = (n * n) / (t * t);
+		float *red_blue_array = (float *)malloc(sizeof(float) * tile_number * 3);	// store the red and blue ratio in grid
+
 		allocate_memory(n, n, &grid_flat, &grid);
 		init_grid(n, &grid);
 		print_grid(n, &grid);
@@ -76,28 +87,64 @@ int main(int argc, char **argv) {
 
 				MPI_Send(&grid_flat[index * n], row[i - 1] * n, MPI_INT, i, 1, MPI_COMM_WORLD);
 			}
+			
+			while (!finished_flag && n_itrs < max_iters) {
+				// receive the iteration number from process 1
+				MPI_Recv(&n_itrs, 1, MPI_INT, 1, 1, MPI_COMM_WORLD, &status);
+				MPI_Allreduce(&finished_flag_p, &finished_flag, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+			}
+
 			for (i = 1; i < numprocs; i++) {
 				int index = 0;
 				for (j = 0; j < i; j++) {
 					index = index + row[j];
 				}
 				index = index - row[i - 1];
-				
+
+				MPI_Recv(&red_blue_array[index * n / (t * t) * 3], (n * row[i - 1]) / (t * t) * 3, MPI_FLOAT, i, 1, MPI_COMM_WORLD, &status);
 				MPI_Recv(&grid_flat[index * n], row[i - 1] * n, MPI_INT, i, 1, MPI_COMM_WORLD, &status);
 			}
+
 			print_grid(n, &grid);
+			for (i = 0; i < tile_number * 3; i++) {
+				printf("%.2f ", red_blue_array[i]);
+			}
 		}
 	}
 	else {
+		tile_number = (n * row[myid - 1]) / (t * t);
+		float *red_blue_array = (float *)malloc(sizeof(float) * tile_number * 3);	// store the red and blue ratio in each tile grid
+
 		allocate_memory(n, row[myid - 1] + 2, &grid_flat, &grid);
 		MPI_Recv(&grid_flat[n], row[myid - 1] * n, MPI_INT, 0, 1, MPI_COMM_WORLD, &status);
-		
-		// create ghost line for the easier manipulation of the grid
-		MPI_Sendrecv(&grid_flat[(row[myid - 1] - 1) * n + n], n, MPI_INT, myid % (numprocs - 1) + 1, 1, &grid_flat[0], n, MPI_INT, (myid - 2 + (numprocs - 1)) % (numprocs - 1) + 1, 1, MPI_COMM_WORLD, &status);
-		MPI_Sendrecv(&grid_flat[n], n, MPI_INT, (myid - 2 + (numprocs - 1)) % (numprocs - 1) + 1, 2, &grid_flat[row[myid - 1] * n + n], n, MPI_INT, myid % (numprocs - 1) + 1, 2, MPI_COMM_WORLD, &status);
-		
-		do_red(n, row[myid - 1] + 2, &grid);
-		do_blue(n, row[myid - 1] + 2, &grid);
+		while (!finished_flag && n_itrs < max_iters) {
+			n_itrs = n_itrs + 1; // renew the iteration number
+
+			// send the iteration number to process 0
+			if (myid == 1) {
+				MPI_Send(&n_itrs, 1, MPI_INT, 0, 1, MPI_COMM_WORLD);
+			}
+
+			// create ghost line for the easier manipulation of the grid
+			MPI_Sendrecv(&grid_flat[(row[myid - 1] - 1) * n + n], n, MPI_INT, myid % (numprocs - 1) + 1, 1, &grid_flat[0], n, MPI_INT, (myid - 2 + (numprocs - 1)) % (numprocs - 1) + 1, 1, MPI_COMM_WORLD, &status);
+			MPI_Sendrecv(&grid_flat[n], n, MPI_INT, (myid - 2 + (numprocs - 1)) % (numprocs - 1) + 1, 2, &grid_flat[row[myid - 1] * n + n], n, MPI_INT, myid % (numprocs - 1) + 1, 2, MPI_COMM_WORLD, &status);
+
+			do_red(n, row[myid - 1] + 2, &grid);
+			do_blue(n, row[myid - 1] + 2, &grid);
+
+			finished_flag_p = red_blue_computation(&red_blue_array, &grid, tile_number, n, t, threshold);
+			MPI_Allreduce(&finished_flag_p, &finished_flag, 1, MPI_INT, MPI_SUM, MPI_COMM_WORLD);
+			
+
+		}
+		/*int k;
+		for (j = 0; j < tile_number; j++) {
+			for (k = 0; k < 3; k++) {
+				printf("%.2f ", red_blue_array[3 * j + k]);
+			}
+		}*/
+		printf("\n");
+		MPI_Send(&red_blue_array[0], tile_number * 3, MPI_FLOAT, 0, 1, MPI_COMM_WORLD);
 		MPI_Send(&grid_flat[n], row[myid - 1] * n, MPI_INT, 0, 1, MPI_COMM_WORLD);
 	}
 
@@ -214,4 +261,62 @@ void do_blue(int l, int w, int ***grid) {
 		else if ((*grid)[0][j] == 4)
 			(*grid)[0][j] = 0;
 	}
+}
+
+int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, int n, int t, float threshold) {
+	float tile_count = t * t;	// the number of cells in each tile
+	int tile_row, tile_column; // the index of tile in tile grid
+	int redcount = 0, bluecount = 0;
+	float red_ratio, blue_ratio;
+	int finished_flag = 0;
+	int i, j, k;
+
+	for (i = 0; i < tile_number; i++) {
+		tile_row = i / (n / t);
+		tile_column = i % (n / t);
+		for (j = t * tile_row; j < t * tile_row + t; j++) {
+			for (k = t * tile_column; k < t * tile_column + t; k++) {
+				if ((*grid)[j + 1][k] == 1) {
+					redcount = redcount + 1;
+				}
+				if ((*grid)[j + 1][k] == 2) {
+					bluecount = bluecount + 1;
+				}
+			}
+		}
+
+		red_ratio = redcount / tile_count;
+		blue_ratio = bluecount / tile_count;
+		red_ratio = (int)(100.0 * red_ratio + 0.5) / 100.0;
+		blue_ratio = (int)(100.0 * blue_ratio + 0.5) / 100.0;
+		(*red_blue_array)[3 * i + 1] = red_ratio;
+		(*red_blue_array)[3 * i + 2] = blue_ratio;
+
+		if (red_ratio > threshold) {
+			(*red_blue_array)[3 * i] = RED;	
+			finished_flag = 1;
+		}
+
+		if (blue_ratio > threshold) {
+			(*red_blue_array)[3 * i] = BLUE;
+			finished_flag = 1;
+		}
+
+		if (blue_ratio > threshold && red_ratio > threshold) {
+			(*red_blue_array)[3 * i] = BOTH;
+			finished_flag = 1;
+		}		
+
+		/*printf("%f %f", red_ratio, blue_ratio);*/
+	
+
+		/*for (k = 0; k < 3; k++) {
+			printf("%.2f ", (*red_blue_array)[3*i + k]);
+		}
+		printf("\n");*/
+
+		redcount = 0; 
+		bluecount = 0;
+	}
+	return finished_flag;
 }
