@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <stdio.h>
 #include <time.h>
+#include <string.h>
 
 #define RED 1
 #define BLUE 2
@@ -19,6 +20,7 @@ void do_blue(int l, int w, int ***grid);
 int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, int n, int t, float threshold, int type);
 void print_computation_result(float **red_blue_array, int tile_number);
 void sequential_computation(int **grid_flat, int ***grid, int tile_number, int n, int t, float threshold, int max_iters);
+void self_check(int ***grid, int ***grid_copy, int n);
 
 int main(int argc, char **argv) {
 	int *grid_flat;	// one-dimension version of grid
@@ -129,6 +131,8 @@ int main(int argc, char **argv) {
 			print_computation_result(&red_blue_array, tile_number);
 
 			sequential_computation(&grid_flat_copy, &grid_copy, tile_number, n, t, threshold, max_iters);
+
+			self_check(&grid, &grid_copy, n);
 		}
 	}
 	else {
@@ -337,6 +341,7 @@ int red_blue_computation(float **red_blue_array, int ***grid, int tile_number, i
 	return finished_flag;
 }
 
+// print which tile exceed the threshold
 void print_computation_result(float **red_blue_array, int tile_number) {
 	int exceed_tile = 0;
 	int i;
@@ -365,6 +370,7 @@ void print_computation_result(float **red_blue_array, int tile_number) {
 	printf("\n");
 }
 
+// sequential program for red/blue computation
 void sequential_computation(int **grid_flat, int ***grid, int tile_number, int n, int t, float threshold, int max_iters) {
 	int finished_flag = 0;
 	int n_itrs = 0;
@@ -384,4 +390,31 @@ void sequential_computation(int **grid_flat, int ***grid, int tile_number, int n
 	printf("After %d interations, the final grid: \n", n_itrs);
 	print_grid(n, grid);
 	print_computation_result(&red_blue_array, tile_number);
+}
+
+// self-checking program
+void self_check(int ***grid, int ***grid_copy, int n) {
+	int flag = 0;
+	int i, j;
+
+	for (i = 0; i < n; i++) {
+		for (j = 0; j < n; j++) {
+			if ((*grid)[i][j] != (*grid_copy)[i][j]) {
+				flag = 1;
+				break;
+			}
+			if (flag == 1) {
+				break;
+			}
+		}
+	}
+
+	if (flag == 0) {
+		printf("The results of parallel program and sequential program are identical.\n");
+		printf("The program is correct.");
+	}
+	else {
+		printf("The results of parallel program and sequential program are not identical.\n");
+		printf("The program is correct.");
+	}
 }
