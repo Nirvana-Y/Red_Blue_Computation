@@ -45,14 +45,14 @@ int main(int argc, char **argv) {
 	MPI_Comm_rank(MPI_COMM_WORLD, &myid);
 
 	// check the command line arguments
-	if (myid == 0) {
-		if (argc != 5) {
+	if (argc != 5) {
+		if (myid == 0) {
 			printf("Wrong number of arguments.\n");
 			printf("Please enter the command in the following format:\n");
 			printf("mpirun -np [proc num] red_blue_computation [cell grid size] [tile grid size] [terminating threshold] [maximum number of iterations]\n");
 			printf("Note: tile grid size should divides cell grid size; process number should smaller than tile grid size.\n");
-			return 0;
 		}
+		goto EXIT;
 	}
 
 	// parse the command line arguments
@@ -62,14 +62,14 @@ int main(int argc, char **argv) {
 	max_iters = atoi(argv[4]);
 	threshold = c / 100.0;
 
-	if (myid == 0) {
-		if ((n % t != 0) || ((numprocs - 1) > (n / t))) {
+	if ((n % t != 0) || ((numprocs - 1) > (n / t))) {
+		if (myid == 0) {
 			printf("Illegal arguments.\n");
 			printf("Please enter the command in the following format:\n");
 			printf("mpirun -np [proc num] red_blue_computation [cell grid size] [tile grid size] [terminating threshold] [maximum number of iterations]\n");
 			printf("Note: tile grid size should divides cell grid size; process number should smaller than tile row number.\n");
-			return 0;
 		}
+		goto EXIT;
 	}
 
 	int *row;
@@ -417,4 +417,5 @@ void self_check(int ***grid, int ***grid_copy, int n) {
 		printf("The results of parallel program and sequential program are not identical.\n");
 		printf("The program is correct.");
 	}
+	printf("\n");
 }
