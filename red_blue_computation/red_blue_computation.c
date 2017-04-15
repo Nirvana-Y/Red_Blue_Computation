@@ -50,7 +50,8 @@ int main(int argc, char **argv) {
 			printf("Wrong number of arguments.\n");
 			printf("Please enter the command in the following format:\n");
 			printf("mpirun -np [proc num] red_blue_computation [cell grid size] [tile grid size] [terminating threshold] [maximum number of iterations]\n");
-			printf("Note: tile grid size should divides cell grid size; process number should smaller than tile grid size.\n");
+			printf("Note: [cell grid size] % [tile grid size] = 0; [proc num] - 1 <= [cell grid size] / [tile grid size].\n");
+			printf("\n");
 		}
 		goto EXIT;
 	}
@@ -67,7 +68,8 @@ int main(int argc, char **argv) {
 			printf("Illegal arguments.\n");
 			printf("Please enter the command in the following format:\n");
 			printf("mpirun -np [proc num] red_blue_computation [cell grid size] [tile grid size] [terminating threshold] [maximum number of iterations]\n");
-			printf("Note: tile grid size should divides cell grid size; process number should smaller than tile row number.\n");
+			printf("Note: [cell grid size] % [tile grid size] = 0; [proc num] - 1 <= [cell grid size] / [tile grid size].\n");
+			printf("\n");
 		}
 		goto EXIT;
 	}
@@ -348,24 +350,24 @@ void print_computation_result(float **red_blue_array, int tile_number) {
 
 	for (i = 0; i < tile_number; i++) {
 		if ((*red_blue_array)[3 * i] == RED) {
-			printf("In tile %d, the red color exceed the threshold with the ratio %.2f.\n", i, (*red_blue_array)[3 * i + 1]);
+			printf("In tile %d, the red color exceeds the threshold with the ratio %.2f.\n", i, (*red_blue_array)[3 * i + 1]);
 			exceed_tile = exceed_tile + 1;
 		}
 
 		if ((*red_blue_array)[3 * i] == BLUE) {
-			printf("In tile %d, the blue color exceed the threshold with the ratio %.2f.\n", i, (*red_blue_array)[3 * i + 2]);
+			printf("In tile %d, the blue color exceeds the threshold with the ratio %.2f.\n", i, (*red_blue_array)[3 * i + 2]);
 			exceed_tile = exceed_tile + 1;
 		}
 
 		if ((*red_blue_array)[3 * i] == BOTH) {
-			printf("In tile %d, the red color exceed the threshold with the ratio %.2f and the blue color exceed the threshold with the ratio %.2f.\n", i, (*red_blue_array)[3 * i + 1], (*red_blue_array)[3 * i + 2]);
+			printf("In tile %d, the red color exceeds the threshold with the ratio %.2f and the blue color exceeds the threshold with the ratio %.2f.\n", i, (*red_blue_array)[3 * i + 1], (*red_blue_array)[3 * i + 2]);
 			exceed_tile = exceed_tile + 1;
 		}
 	}
 
 	if (exceed_tile == 0) {
 		printf("There is no tile containning color exceeding threshold.\n");
-		printf("The computation terminated becausu the maximum iteration number has been reached.\n");
+		printf("The computation terminated because the maximum iteration number has been reached.\n");
 	}
 	printf("\n");
 }
@@ -411,11 +413,11 @@ void self_check(int ***grid, int ***grid_copy, int n) {
 
 	if (flag == 0) {
 		printf("The results of parallel program and sequential program are identical.\n");
-		printf("The program is correct.");
+		printf("The program is correct.\n");
 	}
 	else {
 		printf("The results of parallel program and sequential program are not identical.\n");
-		printf("The program is correct.");
+		printf("The program is wrong.\n");
 	}
 	printf("\n");
 }
